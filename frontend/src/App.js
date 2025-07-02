@@ -1,6 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
-import { NetflixHeader, HeroBanner, ContentRow, LoadingSpinner, NetflixFooter } from './components';
+import { 
+  NetflixHeader, 
+  HeroBanner, 
+  ContentRow, 
+  LoadingSpinner, 
+  NetflixFooter, 
+  LoginModal, 
+  MyListSection,
+  SectionContent
+} from './components';
 
 const TMDB_API_KEY = 'c8dea14dc917687ac631a52620e4f7ad';
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
@@ -73,7 +82,7 @@ const categoryImages = {
     'https://images.unsplash.com/photo-1657305247808-4a4ad8cf4464?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Njl8MHwxfHNlYXJjaHwzfHxzY2ktZmklMjB0aHJpbGxlcnxlbnwwfHx8YmxhY2t8MTc1MTQ2NzY2Mnww&ixlib=rb-4.1.0&q=85',
     'https://images.pexels.com/photos/1358833/pexels-photo-1358833.jpeg',
     'https://images.pexels.com/photos/6036202/pexels-photo-6036202.jpeg',
-    'https://images.unsplash.com/photo-1657305247808-4a4ad8cf4464?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Njl8MHwxfHNlYXJjaHwzfHxzY2ktZmklMjB0aHJpbGxlcnxlbnwwfHx8YmxhY2t8MTc1MTQ2NzY2Mnww&ixlib=rb-4.1.0&q=85'
+    'https://images.unsplash.com/photo-1657305247808-4a4ad8cf4464?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Njl8MHwxfHNlYXJjaHwzfHhzY2ktZmklMjB0aHJpbGxlcnxlbnwwfHx8YmxhY2t8MTc1MTQ2NzY2Mnww&ixlib=rb-4.1.0&q=85'
   ]
 };
 
@@ -81,6 +90,37 @@ function App() {
   const [movies, setMovies] = useState(mockMovies);
   const [loading, setLoading] = useState(true);
   const [heroMovie, setHeroMovie] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [myList, setMyList] = useState([]);
+  const [currentSection, setCurrentSection] = useState('home');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  // Load user data from localStorage on component mount
+  useEffect(() => {
+    const savedUser = localStorage.getItem('netflixUser');
+    if (savedUser) {
+      setCurrentUser(JSON.parse(savedUser));
+    }
+
+    const savedMyList = localStorage.getItem('netflixMyList');
+    if (savedMyList) {
+      setMyList(JSON.parse(savedMyList));
+    }
+  }, []);
+
+  // Save user data to localStorage whenever it changes
+  useEffect(() => {
+    if (currentUser) {
+      localStorage.setItem('netflixUser', JSON.stringify(currentUser));
+    }
+  }, [currentUser]);
+
+  // Save my list to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('netflixMyList', JSON.stringify(myList));
+  }, [myList]);
 
   useEffect(() => {
     const fetchMovies = async () => {
@@ -130,14 +170,71 @@ function App() {
     fetchMovies();
   }, []);
 
-  const handleSearch = (searchTerm) => {
-    console.log('Searching for:', searchTerm);
-    // Implement search functionality here
+  const handleLogin = (userData) => {
+    setCurrentUser(userData);
+    setShowLoginModal(false);
   };
 
-  const handleProfileClick = () => {
-    console.log('Profile clicked');
-    // Implement profile functionality here
+  const handleLogout = () => {
+    setCurrentUser(null);
+    setMyList([]);
+    localStorage.removeItem('netflixUser');
+    localStorage.removeItem('netflixMyList');
+    setCurrentSection('home');
+  };
+
+  const handleAddToList = (movie) => {
+    if (!currentUser) {
+      alert('Faça login para adicionar à sua lista');
+      return;
+    }
+
+    const isAlreadyInList = myList.some(item => item.id === movie.id);
+    if (!isAlreadyInList) {
+      setMyList([...myList, movie]);
+    }
+  };
+
+  const handleRemoveFromList = (movie) => {
+    setMyList(myList.filter(item => item.id !== movie.id));
+  };
+
+  const handleSearch = async (searchTerm) => {
+    if (!searchTerm.trim()) {
+      setSearchResults([]);
+      setSearchTerm('');
+      return;
+    }
+
+    setSearchTerm(searchTerm);
+    
+    try {
+      const response = await fetch(
+        `${TMDB_BASE_URL}/search/multi?api_key=${TMDB_API_KEY}&language=pt-BR&query=${encodeURIComponent(searchTerm)}`
+      );
+      
+      if (response.ok) {
+        const data = await response.json();
+        setSearchResults(data.results?.slice(0, 20) || []);
+      }
+    } catch (error) {
+      console.error('Error searching:', error);
+      // Fallback to simple mock search
+      const allMovies = [...mockMovies.trending, ...mockMovies.popular, ...mockMovies.action, ...mockMovies.horror];
+      const filtered = allMovies.filter(movie => 
+        movie.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        movie.name?.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+      setSearchResults(filtered);
+    }
+  };
+
+  const isInMyList = (movie) => {
+    return myList.some(item => item.id === movie.id);
+  };
+
+  const getAllImages = () => {
+    return [...categoryImages.trending, ...categoryImages.popular, ...categoryImages.action, ...categoryImages.horror];
   };
 
   if (loading) {
@@ -148,38 +245,178 @@ function App() {
     );
   }
 
+  const renderContent = () => {
+    switch (currentSection) {
+      case 'mylist':
+        return (
+          <MyListSection
+            myList={myList}
+            images={getAllImages()}
+            onRemoveFromList={handleRemoveFromList}
+            onAddToList={handleAddToList}
+            currentUser={currentUser}
+          />
+        );
+      case 'series':
+      case 'movies':
+      case 'trending':
+        return (
+          <SectionContent
+            section={currentSection}
+            movies={movies}
+            images={categoryImages}
+            onAddToList={handleAddToList}
+            onRemoveFromList={handleRemoveFromList}
+            myList={myList}
+            currentUser={currentUser}
+          />
+        );
+      case 'search':
+        return (
+          <div className="min-h-screen bg-black text-white pt-20">
+            <div className="px-4 md:px-12 py-20">
+              <h1 className="text-4xl font-bold mb-8">
+                Resultados para "{searchTerm}"
+              </h1>
+              {searchResults.length > 0 ? (
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                  {searchResults.map((movie, index) => (
+                    <div
+                      key={movie.id}
+                      className="relative bg-gray-800 rounded cursor-pointer transform transition-all duration-300 hover:scale-105"
+                    >
+                      <img
+                        src={getAllImages()[index % getAllImages().length]}
+                        alt={movie.title || movie.name}
+                        className="w-full h-32 object-cover rounded"
+                        loading="lazy"
+                      />
+                      
+                      {/* Overlay */}
+                      <div className="absolute inset-0 bg-black/60 opacity-0 hover:opacity-100 transition-opacity rounded flex items-center justify-center">
+                        <div className="text-center text-white p-2">
+                          <h3 className="text-sm font-semibold mb-2 truncate">{movie.title || movie.name}</h3>
+                          <div className="flex justify-center space-x-2">
+                            <button 
+                              onClick={() => alert(`Reproduzindo: ${movie.title || movie.name}`)}
+                              className="bg-white text-black rounded-full p-1 hover:bg-gray-200 transition-colors"
+                            >
+                              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M8 5v14l11-7z"/>
+                              </svg>
+                            </button>
+                            
+                            {isInMyList(movie) ? (
+                              <button 
+                                onClick={() => handleRemoveFromList(movie)}
+                                className="bg-green-600 text-white rounded-full p-1 hover:bg-green-700 transition-colors"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                </svg>
+                              </button>
+                            ) : (
+                              <button 
+                                onClick={() => handleAddToList(movie)}
+                                className="bg-gray-600/70 text-white rounded-full p-1 hover:bg-gray-600/90 transition-colors"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                </svg>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-gray-400 text-lg">Nenhum resultado encontrado.</p>
+              )}
+            </div>
+          </div>
+        );
+      default: // home
+        return (
+          <>
+            <HeroBanner 
+              movie={heroMovie} 
+              onAddToList={handleAddToList}
+              onRemoveFromList={handleRemoveFromList}
+              isInMyList={isInMyList(heroMovie)}
+              currentUser={currentUser}
+            />
+            
+            <div className="relative z-10 -mt-32 pb-20">
+              <ContentRow 
+                title="Em Alta" 
+                movies={movies.trending} 
+                images={categoryImages.trending}
+                onAddToList={handleAddToList}
+                onRemoveFromList={handleRemoveFromList}
+                myList={myList}
+                currentUser={currentUser}
+              />
+              <ContentRow 
+                title="Populares na Netflix" 
+                movies={movies.popular} 
+                images={categoryImages.popular}
+                onAddToList={handleAddToList}
+                onRemoveFromList={handleRemoveFromList}
+                myList={myList}
+                currentUser={currentUser}
+              />
+              <ContentRow 
+                title="Ação & Aventura" 
+                movies={movies.action} 
+                images={categoryImages.action}
+                onAddToList={handleAddToList}
+                onRemoveFromList={handleRemoveFromList}
+                myList={myList}
+                currentUser={currentUser}
+              />
+              <ContentRow 
+                title="Terror & Suspense" 
+                movies={movies.horror} 
+                images={categoryImages.horror}
+                onAddToList={handleAddToList}
+                onRemoveFromList={handleRemoveFromList}
+                myList={myList}
+                currentUser={currentUser}
+              />
+            </div>
+          </>
+        );
+    }
+  };
+
   return (
     <div className="min-h-screen bg-black text-white">
-      <NetflixHeader onSearch={handleSearch} onProfileClick={handleProfileClick} />
+      <NetflixHeader 
+        onSearch={(term) => {
+          handleSearch(term);
+          setCurrentSection('search');
+        }}
+        onProfileClick={() => setCurrentSection('profile')}
+        currentUser={currentUser}
+        onLoginClick={() => setShowLoginModal(true)}
+        onLogout={handleLogout}
+        currentSection={currentSection}
+        onSectionChange={setCurrentSection}
+      />
       
       <main>
-        <HeroBanner movie={heroMovie} />
-        
-        <div className="relative z-10 -mt-32 pb-20">
-          <ContentRow 
-            title="Em Alta" 
-            movies={movies.trending} 
-            images={categoryImages.trending}
-          />
-          <ContentRow 
-            title="Populares na Netflix" 
-            movies={movies.popular} 
-            images={categoryImages.popular}
-          />
-          <ContentRow 
-            title="Ação & Aventura" 
-            movies={movies.action} 
-            images={categoryImages.action}
-          />
-          <ContentRow 
-            title="Terror & Suspense" 
-            movies={movies.horror} 
-            images={categoryImages.horror}
-          />
-        </div>
+        {renderContent()}
       </main>
       
-      <NetflixFooter />
+      {currentSection === 'home' && <NetflixFooter />}
+      
+      <LoginModal
+        isOpen={showLoginModal}
+        onClose={() => setShowLoginModal(false)}
+        onLogin={handleLogin}
+      />
     </div>
   );
 }
